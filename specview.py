@@ -19,6 +19,7 @@ from PIL import Image
 import numpy as np
 from dataclasses import dataclass
 import time
+from itertools import cycle
 
 
 # data
@@ -72,16 +73,15 @@ class MapPicker(ttk.Frame):
     def __init__(self, parent, img, figsize=(12,3.5)):
         super().__init__(parent)
 
-        fig = Figure(figsize=figsize)
-        plate = ccrs.PlateCarree(central_longitude=0)
-        ax = fig.add_subplot(projection=plate)
-        ax.imshow(europa_img, transform=ccrs.PlateCarree(central_longitude=0), extent=[-180,180,-90,90])
-        gl = ax.gridlines(draw_labels=True,
-                          linewidth=2, color='gray', alpha=0.5, linestyle='--')
-        gl.xlabel_style = {'size': 16}
-        gl.ylabel_style = {'size': 16}
+        self.colors = cycle(plt.rcParams["axes.prop_cycle"].by_key()["color"])
+        self.img = img
 
-        self.canvas = FigureCanvasTkAgg(fig, master=self)
+        fig = Figure(figsize=figsize)
+
+        self.fig = fig
+        self.ax = self.draw_map()
+
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.draw()
         self.canvas.get_tk_widget().grid(row=0, column=0)
 
@@ -93,14 +93,26 @@ class MapPicker(ttk.Frame):
         self.canvas.callbacks.connect('button_release_event', self.on_release)
         self.canvas.callbacks.connect('motion_notify_event', self.on_motion)
 
+        self.clearselection = tk.Button(parent, text='Clear ROIs', command=self.on_remove)
+        self.clearselection.grid(row=0, column=1, sticky='nw')
+
         self.selection = None
         self.clicked = False
-        self.fig = fig
-        self.ax = ax
 
         self.select_fns = []
 
-    
+    def draw_map(self):
+            fig = self.fig
+            plate = ccrs.PlateCarree(central_longitude=0)
+            ax = fig.add_subplot(projection=plate)
+            ax.imshow(self.img, transform=ccrs.PlateCarree(central_longitude=0), extent=[-180,180,-90,90])
+            gl = ax.gridlines(draw_labels=True,
+                          linewidth=2, color='gray', alpha=0.5, linestyle='--')
+            gl.xlabel_style = {'size': 16}
+            gl.ylabel_style = {'size': 16}
+
+            return ax
+
     def register_select_callback(self, fn):
         """Register a callback function to invoke when the user selects a region.
 
@@ -132,12 +144,13 @@ class MapPicker(ttk.Frame):
             # set 'clicked' to True to indicate that we have an active selection
             self.clicked = True
             if self.selection is not None:
-                self.selection.remove()
+                #self.selection.remove()
                 self.selection = None
             self.selection = mpatches.Rectangle(
                 (event.xdata,event.ydata), 1, 1,
                 fill=False,
-                edgecolor='red'
+                edgecolor=next(self.colors),
+                linewidth=2
             )
             self.ax.add_artist(self.selection)
             self.ax.draw_artist(self.selection)
@@ -160,6 +173,21 @@ class MapPicker(ttk.Frame):
                     fn(lat2, lon2, lat1, lon1)
 
         self.clicked = False
+
+    def on_remove(self):
+        # Remove all past selections
+        self.clicked = False
+
+        self.selection.remove()
+        self.selection = None
+
+        self.fig.clear()
+        self.ax = self.draw_map()
+        self.canvas.draw()
+
+        self.colors = cycle(plt.rcParams["axes.prop_cycle"].by_key()["color"])
+        
+
 
 
 class SpecViewer(ttk.Frame):
@@ -203,9 +231,10 @@ class SpecViewer(ttk.Frame):
 
     def clear_plot(self):
         self.fig.clear()
+        self.canvas.draw()
 
     def save_plot(self):
-        t = time.time()
+        t = time.time() 
         filenm = str(data_dir)+'/plots/plot_'+str(t)+'.png'
         self.fig.savefig(filenm)
 
