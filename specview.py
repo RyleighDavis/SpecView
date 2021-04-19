@@ -85,10 +85,6 @@ class MapPicker(ttk.Frame):
         self.canvas.draw()
         self.canvas.get_tk_widget().grid(row=0, column=0)
 
-        #self.toolbar = NavigationToolbar2Tk(self.canvas, self)
-        #self.toolbar.update()
-        #self.toolbar.grid(row=0, column=0)
-
         self.status = tk.StringVar()
         self.statusbar = ttk.Label(self, textvariable=self.status, relief=tk.SUNKEN, anchor=tk.W)
         self.statusbar.grid(row=1,column=0, sticky='we')
@@ -188,6 +184,12 @@ class SpecViewer(ttk.Frame):
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.draw()
         self.canvas.get_tk_widget().grid(row=0, column=0)
+
+        toolbarFrame = ttk.Frame(master=self)
+        toolbarFrame.grid(row=0,column=0, sticky='sw')
+        self.toolbar = NavigationToolbar2Tk(self.canvas, toolbarFrame)
+        self.toolbar.update()
+        #self.toolbar.grid(row=0, column=0)
 
         self.status = tk.StringVar()
         self.statusbar = ttk.Label(self, textvariable=self.status, relief=tk.SUNKEN, anchor=tk.E)
