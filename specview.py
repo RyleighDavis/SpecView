@@ -10,13 +10,15 @@ import tkinter as tk
 import tkinter.ttk as ttk
 
 import cartopy.crs as ccrs
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 # Implement the default Matplotlib key bindings.
 from matplotlib.figure import Figure
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 from PIL import Image
 import numpy as np
 from dataclasses import dataclass
+import time
 
 
 # data
@@ -67,7 +69,7 @@ class MapPicker(ttk.Frame):
       img: The map to display, as an Image.
       figsize: The size of the matplotlib figure.
     """
-    def __init__(self, parent, img, figsize=(8,4)):
+    def __init__(self, parent, img, figsize=(12,3.5)):
         super().__init__(parent)
 
         fig = Figure(figsize=figsize)
@@ -82,6 +84,10 @@ class MapPicker(ttk.Frame):
         self.canvas = FigureCanvasTkAgg(fig, master=self)
         self.canvas.draw()
         self.canvas.get_tk_widget().grid(row=0, column=0)
+
+        #self.toolbar = NavigationToolbar2Tk(self.canvas, self)
+        #self.toolbar.update()
+        #self.toolbar.grid(row=0, column=0)
 
         self.status = tk.StringVar()
         self.statusbar = ttk.Label(self, textvariable=self.status, relief=tk.SUNKEN, anchor=tk.W)
@@ -171,12 +177,11 @@ class SpecViewer(ttk.Frame):
       wave: The array of wavelengths.
       data: The data cube -- a dictionary of them!
       figsize: The size of the Matplotlib figure to produce."""
-    def __init__(self, parent, wave, data_cube, pixels, figsize=(8,4)):
+    def __init__(self, parent, wave, data_cube, pixels, figsize=(12,4)):
         super().__init__(parent)
         self.wave = wave
         self.data_cube = data_cube
         self.pixels = pixels
-        self.matches = None
     
         self.fig = Figure(figsize=figsize)
 
@@ -187,6 +192,21 @@ class SpecViewer(ttk.Frame):
         self.status = tk.StringVar()
         self.statusbar = ttk.Label(self, textvariable=self.status, relief=tk.SUNKEN, anchor=tk.E)
         self.statusbar.grid(row=1,column=0, sticky='we')
+
+        self.clearbutton = tk.Button(parent, text='Clear Plot', command=self.clear_plot)
+        self.clearbutton.grid(row=1, column=1, sticky='nw')
+
+        self.savebutton = tk.Button(parent, text='Save Plot', command=self.save_plot)
+        self.savebutton.grid(row=1, column=1, sticky='nw', pady=40)
+
+    def clear_plot(self):
+        self.fig.clear()
+
+    def save_plot(self):
+        t = time.time()
+        filenm = str(data_dir)+'/plots/plot_'+str(t)+'.png'
+        self.fig.savefig(filenm)
+
 
     def match_pixels(self, lat1, lon1, lat2, lon2):
         matches = []
@@ -214,10 +234,9 @@ class SpecViewer(ttk.Frame):
             lat2: The latitude of the lower-right corner.
             lon2: The longitude of the lower-right corner.
         """
-        self.fig.clear()
         ax = self.fig.add_subplot()
-        ax.set_ylabel("Albedo", fontsize=22)
-        ax.set_xlabel("Wavelength (microns)", fontsize=22)
+        ax.set_ylabel("Albedo", fontsize=16)
+        ax.set_xlabel("Wavelength (microns)", fontsize=16)
 
         #Plot relevant spectra!
         matches = self.match_pixels(lat1, lon1, lat2, lon2)
@@ -227,14 +246,17 @@ class SpecViewer(ttk.Frame):
                     label=f'{lat1:.2f}:{lat2:.2f}$^\circ E$, {lon1:.2f}:{lon2:.2f}$^\circ$ N')
         elif len(matches) > 1:
             # Median combine if multiple data pixels
-            print('med combine', len(matches))
             med = np.nanmedian([m.intensity[100:-80] for m in matches], axis=0)
             ax.plot(self.wave[100:-80], med, 
                     label=f'{lat1:.2f}:{lat2:.2f}$^\circ E$, {lon1:.2f}:{lon2:.2f}$^\circ$ N')
-            print(med)
-            print('plot call finished')
 
-        ax.legend(bbox_to_anchor=(1.1, 1), fontsize=12)
+        self.fig.subplots_adjust(bottom=0.15, right=0.7)
+        ax.legend(bbox_to_anchor=(1.5, 1), fontsize=10)
+
+        if ax.get_ylim()[0] < 0:
+            ax.set_ylim(0, ax.get_ylim()[1])
+        if ax.get_ylim()[1] > 0.55:
+            ax.set_ylim(ax.get_ylim()[0], 0.55)
         #ax.set_ylim(0, 0.6)
         # helpful: print the region in the statusbar
         self.status.set(f"selection ({lat1:.3f},{lon1:.3f}) to ({lat2:.3f},{lon2:.3f})")
