@@ -15,10 +15,29 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.patches as mpatches
 from PIL import Image
+import numpy as np
+from dataclasses import dataclass
 
 
 # data
+@dataclass
+class Pixel:
+    lats: np.array #latitude range (lower left, upper right)
+    lons: np.array #longitude range (lower left, upper right)
+    wave: np.array # avelengths
+    intensity: np.array # spectra (intensity)
+    cen_dist: float #distance from center of disk when observed
+        
+    def __init__(self, lats: np.array, lons: np.array, wave:np.array,
+                intensity: np.array, cen_dist: float):
+        self.lats = lats
+        self.lats = lats
+        self.lons = lons
+        self.wave = wave
+        self.intensity = intensity
+        self.cen_dist = cen_dist
 
+# Load data
 data_dir = Path(__file__).parent / "data"
 "Path to pickle and image data."
 
@@ -27,6 +46,7 @@ with open(data_dir / "fullwaves.pkl", 'rb') as f:
     waves = pickle.load(f)
 with open(data_dir / "corr_cubes_101520.pkl", 'rb') as f:
     data = pickle.load(f)
+pixels = np.load(str(data_dir)+"/pixels.npy", allow_pickle=True)
 
 
 # main window
@@ -47,13 +67,13 @@ class MapPicker(ttk.Frame):
       img: The map to display, as an Image.
       figsize: The size of the matplotlib figure.
     """
-    def __init__(self, parent, img, figsize=(10,5)):
+    def __init__(self, parent, img, figsize=(8,4)):
         super().__init__(parent)
 
         fig = Figure(figsize=figsize)
-        plate = ccrs.PlateCarree(central_longitude=-180)
+        plate = ccrs.PlateCarree(central_longitude=0)
         ax = fig.add_subplot(projection=plate)
-        ax.imshow(europa_img, transform=ccrs.PlateCarree(central_longitude=0), extent=[0,360,-90,90])
+        ax.imshow(europa_img, transform=ccrs.PlateCarree(central_longitude=0), extent=[-180,180,-90,90])
         gl = ax.gridlines(draw_labels=True,
                           linewidth=2, color='gray', alpha=0.5, linestyle='--')
         gl.xlabel_style = {'size': 16}
@@ -128,7 +148,15 @@ class MapPicker(ttk.Frame):
             lat2 = lat1 + self.selection.get_width()
             lon2 = lon1 + self.selection.get_height()
             for fn in self.select_fns:
-                fn(lat1, lon1, lat2, lon2)
+                if (lat1 < lat2) & (lon1 < lon2):
+                    fn(lat1, lon1, lat2, lon2)
+                elif (lat2 < lat1) & (lon1 < lon2):
+                    fn(lat2, lon1, lat1, lon2)
+                elif (lat1 < lat2) & (lon2 < lon1):
+                    fn(lat1, lon2, lat2, lon1)
+                else:
+                    fn(lat2, lon2, lat1, lon1)
+
         self.clicked = False
 
 
@@ -143,10 +171,12 @@ class SpecViewer(ttk.Frame):
       wave: The array of wavelengths.
       data: The data cube -- a dictionary of them!
       figsize: The size of the Matplotlib figure to produce."""
-    def __init__(self, parent, wave, data_cube, figsize=(6,5)):
+    def __init__(self, parent, wave, data_cube, pixels, figsize=(8,4)):
         super().__init__(parent)
         self.wave = wave
         self.data_cube = data_cube
+        self.pixels = pixels
+        self.matches = None
     
         self.fig = Figure(figsize=figsize)
 
@@ -157,6 +187,19 @@ class SpecViewer(ttk.Frame):
         self.status = tk.StringVar()
         self.statusbar = ttk.Label(self, textvariable=self.status, relief=tk.SUNKEN, anchor=tk.E)
         self.statusbar.grid(row=1,column=0, sticky='we')
+
+    def match_pixels(self, lat1, lon1, lat2, lon2):
+        matches = []
+        for p in self.pixels:
+            if (((p.lats[0] >= lat1) & (lat2 >= p.lats[1])) & ((p.lons[0] >= lon1) & (p.lons[1] <= lon2))):
+                if np.sign(p.lats[0]) == np.sign(p.lats[1]):
+                    #then not wrapping around 180/-180 boundary
+                    matches.append(p)
+                else:
+                    # TO DO: Add logic to deal with +/- 180 boundary
+                    print('No matches found!')
+            
+        return matches
 
 
     def plot_spectrum(self, lat1, lon1, lat2, lon2):
@@ -175,17 +218,32 @@ class SpecViewer(ttk.Frame):
         ax = self.fig.add_subplot()
         ax.set_ylabel("Albedo", fontsize=22)
         ax.set_xlabel("Wavelength (microns)", fontsize=22)
-        # TODO: Fix this!!!
-        ax.plot(self.wave[90:-80], self.data_cube['225'][:,64,64][90:-80], label=f'{lat1:.3f}$^\circ E$, {lon1:.3f}$^\circ$ N')
-        ax.legend(fontsize=16)
+
+        #Plot relevant spectra!
+        matches = self.match_pixels(lat1, lon1, lat2, lon2)
+        
+        if len(matches) == 1:
+            ax.plot(self.wave[100:-80], matches[0].intensity[100:-80], 
+                    label=f'{lat1:.2f}:{lat2:.2f}$^\circ E$, {lon1:.2f}:{lon2:.2f}$^\circ$ N')
+        elif len(matches) > 1:
+            # Median combine if multiple data pixels
+            print('med combine', len(matches))
+            med = np.nanmedian([m.intensity[100:-80] for m in matches], axis=0)
+            ax.plot(self.wave[100:-80], med, 
+                    label=f'{lat1:.2f}:{lat2:.2f}$^\circ E$, {lon1:.2f}:{lon2:.2f}$^\circ$ N')
+            print(med)
+            print('plot call finished')
+
+        ax.legend(bbox_to_anchor=(1.1, 1), fontsize=12)
+        #ax.set_ylim(0, 0.6)
         # helpful: print the region in the statusbar
         self.status.set(f"selection ({lat1:.3f},{lon1:.3f}) to ({lat2:.3f},{lon2:.3f})")
         self.canvas.draw()
 
 mp = MapPicker(window, europa_img)
-sv = SpecViewer(window, waves, data)
+sv = SpecViewer(window, waves, data, pixels)
 mp.register_select_callback(sv.plot_spectrum)
 mp.grid(row=0, column=0)
-sv.grid(row=0, column=1)
+sv.grid(row=1, column=0)
 
 window.mainloop()
