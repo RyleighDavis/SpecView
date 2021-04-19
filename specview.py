@@ -59,7 +59,7 @@ class MapPicker(ttk.Frame):
         gl.xlabel_style = {'size': 16}
         gl.ylabel_style = {'size': 16}
 
-        self.canvas = FigureCanvasTkAgg(fig, parent=self)
+        self.canvas = FigureCanvasTkAgg(fig, master=self)
         self.canvas.draw()
         self.canvas.get_tk_widget().grid(row=0, column=0)
 
@@ -150,7 +150,7 @@ class SpecViewer(ttk.Frame):
     
         self.fig = Figure(figsize=figsize)
 
-        self.canvas = FigureCanvasTkAgg(self.fig, parent=self)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.draw()
         self.canvas.get_tk_widget().grid(row=0, column=0)
 
