@@ -103,9 +103,9 @@ class MapPicker(ttk.Frame):
 
     def draw_map(self):
             fig = self.fig
-            plate = ccrs.PlateCarree(central_longitude=0)
+            plate = ccrs.PlateCarree(central_longitude=180)
             ax = fig.add_subplot(projection=plate)
-            ax.imshow(self.img, transform=ccrs.PlateCarree(central_longitude=0), extent=[-180,180,-90,90])
+            ax.imshow(self.img, transform=ccrs.PlateCarree(central_longitude=180), extent=[-180,180,-90,90])
             gl = ax.gridlines(draw_labels=True,
                           linewidth=2, color='gray', alpha=0.5, linestyle='--')
             gl.xlabel_style = {'size': 16}
@@ -286,8 +286,8 @@ class SpecViewer(ttk.Frame):
 
         if ax.get_ylim()[0] < 0:
             ax.set_ylim(0, ax.get_ylim()[1])
-        if ax.get_ylim()[1] > 0.55:
-            ax.set_ylim(ax.get_ylim()[0], 0.55)
+        if ax.get_ylim()[1] > 0.6:
+            ax.set_ylim(ax.get_ylim()[0], 0.6)
         #ax.set_ylim(0, 0.6)
         # helpful: print the region in the statusbar
         self.status.set(f"selection ({lat1:.3f},{lon1:.3f}) to ({lat2:.3f},{lon2:.3f})")
