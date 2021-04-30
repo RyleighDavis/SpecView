@@ -95,7 +95,8 @@ class Pixel:
         self.intensity = intensity
         self.cen_dist = cen_dist
 
-# Load data
+# Load data:
+# TO DO: Lat/lons are swapped, need to fix this!
 data_dir = Path(__file__).parent / "data"
 "Path to pickle and image data."
 
@@ -237,17 +238,6 @@ class MapPicker(ttk.Frame):
             self.coords = Coordinates(lon1, lon2, lat1, lat2)
             for fn in self.select_fns:
                 fn(self.coords)
-#             lat1, lat2 = self.coords.lat1, self.coords.lat2
-#             lon1, lon2 = self.coords.lon1EW, self.coords.lon2EW
-#             for fn in self.select_fns:
-#                 if (lat1 < lat2) & (lon1 < lon2):
-#                     fn(lat1, lon1, lat2, lon2)
-#                 elif (lat2 < lat1) & (lon1 < lon2):
-#                     fn(lat2, lon1, lat1, lon2)
-#                 elif (lat1 < lat2) & (lon2 < lon1):
-#                     fn(lat1, lon2, lat2, lon1)
-#                 else:
-#                     fn(lat2, lon2, lat1, lon1)
 
         self.clicked = False
 
@@ -299,6 +289,7 @@ class SpecViewer(ttk.Frame):
         super().__init__(parent)
         self.wave = wave
         self.data_cube = data_cube
+        # TO DO: fix underlying data in pixels and remove correct function
         self.pixels = correct_pixels(pixels)
     
         self.fig = Figure(figsize=figsize)
@@ -332,7 +323,6 @@ class SpecViewer(ttk.Frame):
         filenm = str(data_dir)+'/plots/plot_'+str(t)+'.png'
         self.fig.savefig(filenm)
 
-
     def match_pixels(self, coords):
         matches = []
         print(coords)
@@ -363,7 +353,6 @@ class SpecViewer(ttk.Frame):
         ax.set_xlabel("Wavelength (microns)", fontsize=16)
 
         #Plot relevant spectra!
-        #matches = self.match_pixels(lat1, lon1, lat2, lon2)
         matches = self.match_pixels(coords)
         for m in matches:
             print(m.lons)
