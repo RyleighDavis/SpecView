@@ -15,11 +15,67 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.figure import Figure
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+
 from PIL import Image
 import numpy as np
 from dataclasses import dataclass
 import time
 from itertools import cycle
+
+@dataclass
+class Coordinates:
+    lat1: float
+    lon1I: float
+    lat2: float
+    lon2I: float
+    lon1W: float
+    lon2W: float
+    lon1EW: float
+    lon2EW: float
+        
+    def __init__(self,  lon1I: float, lon2I:float, lat1: float, lat2: float):
+        self.lat1 = lat1
+        self.lat2 = lat2
+        
+        self.lon1I = lon1I
+        self.lon2I = lon2I
+        
+        self.posW_transform()
+        self.posEW_transform()
+        
+    def posW_transform(self):
+        """ Translate lats from image coords to [360, 0] (W)"""
+        def transW(l):
+            return 180. - l
+        
+        if transW(self.lon1I) <= transW(self.lon2I):
+            self.lon1W = transW(self.lon1I)
+            self.lon2W = transW(self.lon2I)
+        else:
+            self.lon1W = transW(self.lon2I)
+            self.lon2W = transW(self.lon1I)
+       
+    def posEW_transform(self):
+        """ Translate lats from image coords to [-180, 180] (EW)"""
+        def transEW(l):
+            return -1*np.sign(l)*(180. - np.abs(l))
+        
+        if transEW(self.lon1I) <= transEW(self.lon2I):
+            self.lon1EW = transEW(self.lon1I)
+            self.lon2EW = transEW(self.lon2I)
+        else:
+            self.lon1EW = transEW(self.lon2I)
+            self.lon2EW = transEW(self.lon1I)
+            
+    def within_region(self, lonEW, latEW) -> bool:
+        if not ((self.lon1EW <= lonEW) and (lonEW <= self.lon2EW)):
+            return False
+        if (self.lat1 <= latEW) and (latEW <= self.lat2):
+            return True
+        elif (self.lat2 <= latEW) and (latEW <= self.lat1):
+            return True
+        return False
 
 
 # data
@@ -33,7 +89,6 @@ class Pixel:
         
     def __init__(self, lats: np.array, lons: np.array, wave:np.array,
                 intensity: np.array, cen_dist: float):
-        self.lats = lats
         self.lats = lats
         self.lons = lons
         self.wave = wave
@@ -102,16 +157,32 @@ class MapPicker(ttk.Frame):
         self.select_fns = []
 
     def draw_map(self):
-            fig = self.fig
-            plate = ccrs.PlateCarree(central_longitude=180)
-            ax = fig.add_subplot(projection=plate)
-            ax.imshow(self.img, transform=ccrs.PlateCarree(central_longitude=180), extent=[-180,180,-90,90])
-            gl = ax.gridlines(draw_labels=True,
+        def west_positive_formatted(longitude, num_format='g'):
+            fmt_string = u'{longitude:{num_format}}{degree}{hemisphere}'
+    
+            if longitude >= 0:
+                longitude = 360 - longitude
+            else:
+                -1*longitude
+            #Transform 180W to 180E to 0-360 W
+            return fmt_string.format(longitude=abs(longitude), num_format=num_format,
+                             hemisphere='W',
+                             degree=u'\u00B0')
+        
+        fig = self.fig
+        plate = ccrs.PlateCarree(central_longitude=180)
+        ax = fig.add_subplot(projection=plate)
+        ax.imshow(self.img, transform=ccrs.PlateCarree(central_longitude=0))#, extent=[-360, -0, -90,90])
+        gl = ax.gridlines(draw_labels=True,
                           linewidth=2, color='gray', alpha=0.5, linestyle='--')
-            gl.xlabel_style = {'size': 16}
-            gl.ylabel_style = {'size': 16}
+        gl.xformatter = mticker.FuncFormatter(lambda v, pos:
+                                             west_positive_formatted(v))
 
-            return ax
+        gl.xlabel_style = {'size': 16}
+        gl.ylabel_style = {'size': 16}
+        ax.set_global()
+
+        return ax
 
     def register_select_callback(self, fn):
         """Register a callback function to invoke when the user selects a region.
@@ -127,8 +198,9 @@ class MapPicker(ttk.Frame):
 
     def on_motion(self, event):
         if event.inaxes is not None:
-            # we are inside the 'map' part of the plot
-            self.status.set(f"{event.xdata:.3f}, {event.ydata:.3f}")
+            pos = Coordinates(event.xdata, event.xdata, event.ydata, event.ydata)
+            self.status.set(f"{pos.lon1W:.3f}, {pos.lat1:.3f}")
+            #self.status.set(f"{event.xdata:.3f}, {event.ydata:.3f}")
             if self.clicked and self.selection is not None:
                 # we have a selection -- update it!
                 x,y = self.selection.get_xy()
@@ -159,18 +231,23 @@ class MapPicker(ttk.Frame):
     def on_release(self, event):
         if self.clicked:
             # we have completed an active selection -- invoke callbacks
-            lat1, lon1 = self.selection.get_xy()
-            lat2 = lat1 + self.selection.get_width()
-            lon2 = lon1 + self.selection.get_height()
+            lon1, lat1 = self.selection.get_xy()
+            lon2 = lon1 + self.selection.get_width()
+            lat2 = lat1 + self.selection.get_height()
+            self.coords = Coordinates(lon1, lon2, lat1, lat2)
             for fn in self.select_fns:
-                if (lat1 < lat2) & (lon1 < lon2):
-                    fn(lat1, lon1, lat2, lon2)
-                elif (lat2 < lat1) & (lon1 < lon2):
-                    fn(lat2, lon1, lat1, lon2)
-                elif (lat1 < lat2) & (lon2 < lon1):
-                    fn(lat1, lon2, lat2, lon1)
-                else:
-                    fn(lat2, lon2, lat1, lon1)
+                fn(self.coords)
+#             lat1, lat2 = self.coords.lat1, self.coords.lat2
+#             lon1, lon2 = self.coords.lon1EW, self.coords.lon2EW
+#             for fn in self.select_fns:
+#                 if (lat1 < lat2) & (lon1 < lon2):
+#                     fn(lat1, lon1, lat2, lon2)
+#                 elif (lat2 < lat1) & (lon1 < lon2):
+#                     fn(lat2, lon1, lat1, lon2)
+#                 elif (lat1 < lat2) & (lon2 < lon1):
+#                     fn(lat1, lon2, lat2, lon1)
+#                 else:
+#                     fn(lat2, lon2, lat1, lon1)
 
         self.clicked = False
 
@@ -188,6 +265,23 @@ class MapPicker(ttk.Frame):
         self.colors = cycle(plt.rcParams["axes.prop_cycle"].by_key()["color"])
         
 
+def valid_coord_region(lon1,lon2,lat1,lat2):
+    "Check that a coordinate region is valid."
+    return (lon1 <= lon2) and (lat1 <= lat2)
+
+
+def correct_pixels(pixels):
+    "Last minute corrections to pixel formatting."
+    
+    corrected = []
+    
+    for p in pixels:
+        if p.intensity[100:-80].count() == 0:
+            continue
+        # todo: confirm that what we fix here (lat/lon flipped) matches with how the data was generated
+        corrected.append(Pixel(np.array(p.lons), np.array(p.lats), p.wave, p.intensity, p.cen_dist))
+        
+    return corrected
 
 
 class SpecViewer(ttk.Frame):
@@ -205,7 +299,7 @@ class SpecViewer(ttk.Frame):
         super().__init__(parent)
         self.wave = wave
         self.data_cube = data_cube
-        self.pixels = pixels
+        self.pixels = correct_pixels(pixels)
     
         self.fig = Figure(figsize=figsize)
 
@@ -239,21 +333,20 @@ class SpecViewer(ttk.Frame):
         self.fig.savefig(filenm)
 
 
-    def match_pixels(self, lat1, lon1, lat2, lon2):
+    def match_pixels(self, coords):
         matches = []
+        print(coords)
         for p in self.pixels:
-            if (((p.lats[0] >= lat1) & (lat2 >= p.lats[1])) & ((p.lons[0] >= lon1) & (p.lons[1] <= lon2))):
-                if np.sign(p.lats[0]) == np.sign(p.lats[1]):
-                    #then not wrapping around 180/-180 boundary
-                    matches.append(p)
-                else:
-                    # TO DO: Add logic to deal with +/- 180 boundary
-                    print('No matches found!')
+            if coords.within_region(p.lons[0], p.lats[0]) and coords.within_region(p.lons[1], p.lats[1]):
+                matches.append(p)
+                
+        if not matches:
+            print("No matches found :(")
             
         return matches
 
 
-    def plot_spectrum(self, lat1, lon1, lat2, lon2):
+    def plot_spectrum(self, coords):
         """Plot the spectrum associated to a specified lat/lon region.
         
         This assumes that the region is rectangular (in the projection), and that
@@ -270,16 +363,22 @@ class SpecViewer(ttk.Frame):
         ax.set_xlabel("Wavelength (microns)", fontsize=16)
 
         #Plot relevant spectra!
-        matches = self.match_pixels(lat1, lon1, lat2, lon2)
+        #matches = self.match_pixels(lat1, lon1, lat2, lon2)
+        matches = self.match_pixels(coords)
+        for m in matches:
+            print(m.lons)
         
         if len(matches) == 1:
             ax.plot(self.wave[100:-80], matches[0].intensity[100:-80], 
-                    label=f'{lat1:.2f}:{lat2:.2f}$^\circ E$, {lon1:.2f}:{lon2:.2f}$^\circ$ N')
+                    label=f'{coords.lon1W:.2f}:{coords.lon2W:.2f}$^\circ W$, {coords.lat1:.2f}:{coords.lat2:.2f}$^\circ$ N')
         elif len(matches) > 1:
             # Median combine if multiple data pixels
-            med = np.nanmedian([m.intensity[100:-80] for m in matches], axis=0)
+            pixdata = [m.intensity[100:-80] for m in matches]
+            #np.set_printoptions(threshold=np.inf)
+            #print([m.count() for m in pixdata])
+            med = np.nanmedian(pixdata, axis=0)
             ax.plot(self.wave[100:-80], med, 
-                    label=f'{lat1:.2f}:{lat2:.2f}$^\circ E$, {lon1:.2f}:{lon2:.2f}$^\circ$ N')
+                    label=f'{coords.lon1W:.2f}:{coords.lon2W:.2f}$^\circ W$, {coords.lat1:.2f}:{coords.lat2:.2f}$^\circ$ N')
 
         self.fig.subplots_adjust(bottom=0.15, right=0.7)
         ax.legend(bbox_to_anchor=(1.5, 1), fontsize=10)
@@ -290,7 +389,7 @@ class SpecViewer(ttk.Frame):
             ax.set_ylim(ax.get_ylim()[0], 0.6)
         #ax.set_ylim(0, 0.6)
         # helpful: print the region in the statusbar
-        self.status.set(f"selection ({lat1:.3f},{lon1:.3f}) to ({lat2:.3f},{lon2:.3f})")
+        self.status.set(f"selection ({coords.lat1:.3f},{coords.lon1W:.3f}) to ({coords.lat2:.3f},{coords.lon2W:.3f})")
         self.canvas.draw()
 
 mp = MapPicker(window, europa_img)
