@@ -22,6 +22,7 @@ import numpy as np
 from dataclasses import dataclass
 import time
 from itertools import cycle
+from copy import copy
 
 @dataclass
 class Coordinates:
@@ -86,6 +87,7 @@ class Pixel:
     wave: np.array # avelengths
     intensity: np.array # spectra (intensity)
     cen_dist: float #distance from center of disk when observed
+    scaled_intensity: np.array #allow arbitrary 2 wavelength scaling to be plotted
         
     def __init__(self, lats: np.array, lons: np.array, wave:np.array,
                 intensity: np.array, cen_dist: float):
@@ -94,6 +96,7 @@ class Pixel:
         self.wave = wave
         self.intensity = intensity
         self.cen_dist = cen_dist
+        self.scaled_intensity = intensity
 
 # Load data:
 # TO DO: Lat/lons are swapped, need to fix this!
@@ -105,7 +108,10 @@ with open(data_dir / "fullwaves.pkl", 'rb') as f:
     waves = pickle.load(f)
 with open(data_dir / "corr_cubes_101520.pkl", 'rb') as f:
     data = pickle.load(f)
-pixels = np.load(str(data_dir)+"/pixels.npy", allow_pickle=True)
+ps = np.load(str(data_dir)+"/pixels.npy", allow_pickle=True) 
+
+# To Do: more elegant solution for intensity scaling?
+pixels = [Pixel(p.lats, p.lons, p.wave, p.intensity, p.cen_dist) for p in ps]
 
 
 # main window
@@ -260,18 +266,18 @@ def valid_coord_region(lon1,lon2,lat1,lat2):
     return (lon1 <= lon2) and (lat1 <= lat2)
 
 
-def correct_pixels(pixels):
-    "Last minute corrections to pixel formatting."
+# def correct_pixels(pixels):
+#     "Last minute corrections to pixel formatting."
     
-    corrected = []
+#     corrected = []
     
-    for p in pixels:
-        if p.intensity[100:-80].count() == 0:
-            continue
-        # todo: confirm that what we fix here (lat/lon flipped) matches with how the data was generated
-        corrected.append(Pixel(np.array(p.lons), np.array(p.lats), p.wave, p.intensity, p.cen_dist))
+#     for p in pixels:
+#         if p.intensity[100:-80].count() == 0:
+#             continue
+#         # todo: confirm that what we fix here (lat/lon flipped) matches with how the data was generated
+#         corrected.append(Pixel(np.array(p.lons), np.array(p.lats), p.wave, p.intensity, p.cen_dist))
         
-    return corrected
+#     return corrected
 
 
 class SpecViewer(ttk.Frame):
@@ -290,7 +296,8 @@ class SpecViewer(ttk.Frame):
         self.wave = wave
         self.data_cube = data_cube
         # TO DO: fix underlying data in pixels and remove correct function
-        self.pixels = correct_pixels(pixels)
+        #self.pixels = correct_pixels(pixels)
+        self.pixels = pixels
     
         self.fig = Figure(figsize=figsize)
 
@@ -313,6 +320,20 @@ class SpecViewer(ttk.Frame):
 
         self.savebutton = tk.Button(parent, text='Save Plot', command=self.save_plot)
         self.savebutton.grid(row=1, column=1, sticky='nw', pady=40)
+        
+        # Widget to scale the intensity
+        #tk.Label(parent, text="Lambda 1:").grid(column=1, row=0)
+        #tk.Label(parent, text="Lambda 2:").grid(column=1, row=0)
+
+        w1 = tk.Entry(parent, text="Lambda 1: ")
+        w2 = tk.Entry(parent, text="Lambda 2: ")
+        
+        w1.grid(row=0, column=1, sticky='nw', pady=40)
+        w2.grid(row=0, column=1, sticky='nw', pady=80)
+
+        self.scaleintbutton = tk.Button(parent, text='Scale Spectra',
+                                       command = lambda: self.scale_pixels(w1.get(), w2.get()))
+        self.scaleintbutton.grid(row=0, column=1, sticky='nw', pady=120)
 
     def clear_plot(self):
         self.fig.clear()
@@ -325,7 +346,6 @@ class SpecViewer(ttk.Frame):
 
     def match_pixels(self, coords):
         matches = []
-        print(coords)
         for p in self.pixels:
             if coords.within_region(p.lons[0], p.lats[0]) and coords.within_region(p.lons[1], p.lats[1]):
                 matches.append(p)
@@ -334,6 +354,30 @@ class SpecViewer(ttk.Frame):
             print("No matches found :(")
             
         return matches
+    
+    def scale_pixels(self, wave1, wave2):
+        """ Scale pixel values."""
+        wave1, wave2 = float(wave1), float(wave2)
+        print(wave1, wave2)
+        if wave1 is None:
+            for p in self.pixels:
+                p.scaled_intensity = copy(p.intensity)
+        else: #scale based on wave values
+            waves = copy(self.pixels[0].wave)
+
+            idx1 = np.argmin(np.abs(waves - wave1))
+            idx2 = np.argmin(np.abs(waves - wave2))
+
+            w1val = np.mean([p.intensity[idx1] for p in pixels])
+            w2val = np.mean([p.intensity[idx2] for p in pixels])
+
+            for p in self.pixels:
+                scale = (w2val-w1val)/(p.intensity[idx2]-p.intensity[idx1])
+                p.scaled_intensity = p.intensity*(scale)
+
+                sub = w1val - p.scaled_intensity[idx1]
+                p.scaled_intensity = p.scaled_intensity + sub
+
 
 
     def plot_spectrum(self, coords):
@@ -354,19 +398,19 @@ class SpecViewer(ttk.Frame):
 
         #Plot relevant spectra!
         matches = self.match_pixels(coords)
-        for m in matches:
-            print(m.lons)
         
         if len(matches) == 1:
             ax.plot(self.wave[100:-80], matches[0].intensity[100:-80], 
                     label=f'{coords.lon1W:.2f}:{coords.lon2W:.2f}$^\circ W$, {coords.lat1:.2f}:{coords.lat2:.2f}$^\circ$ N')
         elif len(matches) > 1:
             # Median combine if multiple data pixels
-            pixdata = [m.intensity[100:-80] for m in matches]
+            pixdata = [m.scaled_intensity[100:-80] for m in matches]
             #np.set_printoptions(threshold=np.inf)
             #print([m.count() for m in pixdata])
-            med = np.nanmedian(pixdata, axis=0)
-            ax.plot(self.wave[100:-80], med, 
+            
+            # TO  DO: actually bin spatial pixels
+            binned = np.nanmedian(pixdata, axis=0)
+            ax.plot(self.wave[100:-80], binned,
                     label=f'{coords.lon1W:.2f}:{coords.lon2W:.2f}$^\circ W$, {coords.lat1:.2f}:{coords.lat2:.2f}$^\circ$ N')
 
         self.fig.subplots_adjust(bottom=0.15, right=0.7)
