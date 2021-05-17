@@ -259,26 +259,6 @@ class MapPicker(ttk.Frame):
         self.canvas.draw()
 
         self.colors = cycle(plt.rcParams["axes.prop_cycle"].by_key()["color"])
-        
-
-def valid_coord_region(lon1,lon2,lat1,lat2):
-    "Check that a coordinate region is valid."
-    return (lon1 <= lon2) and (lat1 <= lat2)
-
-
-# def correct_pixels(pixels):
-#     "Last minute corrections to pixel formatting."
-    
-#     corrected = []
-    
-#     for p in pixels:
-#         if p.intensity[100:-80].count() == 0:
-#             continue
-#         # todo: confirm that what we fix here (lat/lon flipped) matches with how the data was generated
-#         corrected.append(Pixel(np.array(p.lons), np.array(p.lats), p.wave, p.intensity, p.cen_dist))
-        
-#     return corrected
-
 
 class SpecViewer(ttk.Frame):
     """Display a spectrum corresponding to some spatial region.
@@ -322,15 +302,10 @@ class SpecViewer(ttk.Frame):
         self.savebutton.grid(row=1, column=1, sticky='nw', pady=40)
         
         # Widget to scale the intensity
-        #tk.Label(parent, text="Lambda 1:").grid(column=1, row=0)
-        #tk.Label(parent, text="Lambda 2:").grid(column=1, row=0)
-
         w1 = tk.Entry(parent, text="Lambda 1: ")
         w2 = tk.Entry(parent, text="Lambda 2: ")
-        
         w1.grid(row=0, column=1, sticky='nw', pady=40)
         w2.grid(row=0, column=1, sticky='nw', pady=80)
-
         self.scaleintbutton = tk.Button(parent, text='Scale Spectra',
                                        command = lambda: self.scale_pixels(w1.get(), w2.get()))
         self.scaleintbutton.grid(row=0, column=1, sticky='nw', pady=120)
