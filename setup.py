@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 VERSION = '0.0.1' 
 DESCRIPTION = 'A spectrum viewing tool'
@@ -14,8 +14,7 @@ setup(
         author_email="<rdavis@caltech.edu>",
         description=DESCRIPTION,
         long_description=LONG_DESCRIPTION,
-        packages=find_packages(),
-        install_requires=[], # add any additional packages that 
+        install_requires=[numpy, scipy, matplotlib, pillow, cartopy], # add any additional packages that 
         # needs to be installed along with your package. Eg: 'caer'
         
         keywords=['python', 'specview', 'spectral viewing tool'],
